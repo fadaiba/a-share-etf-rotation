@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import yaml
+from logger import logger
 
 class RiskManager:
     """风险管理器"""
@@ -11,14 +12,24 @@ class RiskManager:
         self.config = config['risk']
 
     def market_filter(self, index_df: pd.DataFrame) -> bool:
-        """市场过滤：如果指数收盘价 < MA60，则空仓"""
+        """市场过滤：如果指数收盘价 < MA60，则降低仓位"""
         if index_df.empty or len(index_df) < self.config['market_filter']['ma_period']:
-            return False  # 默认不过滤
+            logger.bind(context="risk").debug("市场过滤：数据不足，默认允许交易")
+            return True  # 数据不足时允许交易
 
         ma60 = index_df['close'].rolling(window=self.config['market_filter']['ma_period']).mean().iloc[-1]
         current_close = index_df['close'].iloc[-1]
 
-        return current_close >= ma60  # True表示可以交易
+        is_bullish = current_close >= ma60
+        ma_ratio = (current_close / ma60 - 1) * 100  # 相对于MA的百分比
+
+        # 记录市场状态
+        if is_bullish:
+            logger.bind(context="risk").debug(f"市场过滤：多头市场（收盘价 {current_close:.2f} >= MA60 {ma60:.2f}，+{ma_ratio:.2f}%）")
+        else:
+            logger.bind(context="risk").warning(f"市场过滤：空头市场（收盘价 {current_close:.2f} < MA60 {ma60:.2f}，{ma_ratio:.2f}%）→ 降低仓位至50%")
+
+        return is_bullish  # True表示满仓，False表示降低仓位
 
     def calculate_downside_volatility(self, returns: pd.Series) -> float:
         """计算下行波动率"""

@@ -118,6 +118,7 @@ class BacktestEngine:
         self.config = config
         self.fee_rate = config['backtest']['fee_rate']
         self.slippage = config['backtest']['slippage']
+        self.trade_records = []  # 交易记录列表
 
     def run_backtest(self, strategy_func, start_date: str, end_date: str,
                     initial_cash: float = 1000000.0, price_data: Dict[str, pd.DataFrame] = None,
@@ -202,8 +203,12 @@ class BacktestEngine:
                     valid_dates = available_dates[available_dates <= target_date]
                     if len(valid_dates) > 0:
                         closest_date = valid_dates.max()
-                        close_price = df.loc[closest_date, 'close']
-                        prices[symbol] = close_price
+                        # 使用iloc获取最后一个值，确保返回标量
+                        close_price_series = df.loc[df.index <= target_date, 'close']
+                        if not close_price_series.empty:
+                            # 获取最后一个值并转换为float
+                            close_price = float(close_price_series.iloc[-1])
+                            prices[symbol] = close_price
 
         return prices
 
@@ -246,12 +251,19 @@ class BacktestEngine:
             shares = trade['shares']
             action = trade['action']
 
+            # 获取持仓信息用于计算收益
+            position_info = account.positions.get(symbol, {'shares': 0, 'avg_price': 0})
+            avg_price = position_info['avg_price'] if action == 'sell' else 0
+
             if action == 'buy':
                 price = prices.get(symbol, 0) * (1 + self.slippage)  # 买入滑点
                 actual_shares = int(shares)  # 取整
+                profit = 0.0  # 买入没有收益
             else:  # sell
                 price = prices.get(symbol, 0) * (1 - self.slippage)  # 卖出滑点
                 actual_shares = -int(shares)  # 取整为负数
+                # 计算收益：(卖出价 - 成本价) * 数量
+                profit = (price - avg_price) * abs(shares) if avg_price > 0 else 0.0
 
             if actual_shares != 0:
                 # 执行交易，返回实际执行的股票数量
@@ -272,6 +284,18 @@ class BacktestEngine:
 
                     # 记录交易日志
                     log_trade_execution(symbol, action, executed_shares, price, trade_value)
+
+                    # 保存交易记录到列表
+                    self.trade_records.append({
+                        'date': date,
+                        'symbol': symbol,
+                        'action': action,
+                        'price': price,
+                        'shares': executed_shares,
+                        'value': trade_value,
+                        'profit': profit if action == 'sell' else 0.0,
+                        'avg_cost': avg_price if action == 'sell' else 0.0
+                    })
                 else:
                     logger.bind(context="trading").debug(f"{date}: {symbol} 无法执行交易（资金或持仓不足）")
             else:
@@ -296,3 +320,72 @@ class BacktestEngine:
 
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
+
+    def save_trade_report(self, start_date: str, end_date: str, output_path: str = None):
+        """保存交易报告到txt文件"""
+        if output_path is None:
+            output_path = f"回测报告_{start_date}_{end_date}.txt"
+
+        # ETF代码到名称的映射
+        etf_names = {
+            '510300': '沪深300ETF', '510500': '中证500ETF', '159915': '创业板ETF',
+            '159919': '沪深300ETF', '512100': '医药ETF', '512880': '证券ETF',
+            '515050': '5GETF', '516160': '新能源ETF', '159949': '恒生ETF',
+            '518880': '黄金ETF', '159952': '创业板ETF', '159926': '国债ETF',
+            '159941': '纳斯达克ETF'
+        }
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            # 写入标题
+            f.write("=" * 140 + "\n")
+            f.write(f"A股ETF量化交易系统 - 回测交易报告\n")
+            f.write(f"回测期间: {start_date} 至 {end_date}\n")
+            f.write(f"总交易数: {len(self.trade_records)} 笔\n")
+            f.write("=" * 140 + "\n\n")
+
+            # 写入表头
+            f.write(f"{'交易日期':<12} {'股票代码':<10} {'股票名称':<15} {'买卖类型':<8} {'价格':<12} {'数量':>12} {'交易金额':>15} {'收益':>15}\n")
+            f.write("-" * 140 + "\n")
+
+            # 统计数据
+            total_buy_value = 0
+            total_sell_value = 0
+            total_profit = 0
+            buy_count = 0
+            sell_count = 0
+
+            # 写入每笔交易
+            for record in self.trade_records:
+                date = record['date']
+                symbol = record['symbol']
+                name = etf_names.get(symbol, '未知ETF')  # 获取ETF名称
+                action = '买入' if record['action'] == 'buy' else '卖出'
+                price = record['price']
+                shares = record['shares']
+                value = record['value']
+                profit = record['profit']
+
+                # 格式化输出
+                if record['action'] == 'buy':
+                    profit_str = "-"
+                    total_buy_value += value
+                    buy_count += 1
+                else:
+                    profit_str = f"{profit:>15.2f}"
+                    total_sell_value += value
+                    total_profit += profit
+                    sell_count += 1
+
+                f.write(f"{date:<12} {symbol:<10} {name:<15} {action:<8} {price:<12.4f} {shares:>12.0f} {value:>15.2f} {profit_str}\n")
+
+            # 写入汇总统计
+            f.write("-" * 140 + "\n")
+            f.write("汇总统计:\n")
+            f.write(f"  买入交易: {buy_count} 笔，总金额: {total_buy_value:,.2f} 元\n")
+            f.write(f"  卖出交易: {sell_count} 笔，总金额: {total_sell_value:,.2f} 元\n")
+            f.write(f"  总收益: {total_profit:,.2f} 元\n")
+            f.write(f"  收益率: {(total_profit / total_buy_value * 100) if total_buy_value > 0 else 0:.2f}%\n")
+            f.write("=" * 140 + "\n")
+
+        logger.bind(context="backtest").info(f"交易报告已保存到: {output_path}")
+        return output_path

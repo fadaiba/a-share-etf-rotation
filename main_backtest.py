@@ -31,9 +31,60 @@ def prepare_data(config):
     """准备数据"""
     logger.info("开始准备回测数据")
 
-    # 强制使用mock数据源，避免网络问题
-    from data.loader import MockDataLoader, CachedDataLoader
-    data_loader = CachedDataLoader(MockDataLoader())
+    # 尝试使用配置的数据源
+    data_source = config['data']['source']
+
+    # 如果是akshare，先尝试加载，失败则自动回退到mock
+    if data_source == 'akshare':
+        try:
+            logger.info("尝试使用akshare数据源...")
+
+            # 禁用代理环境变量
+            import os
+            os.environ['NO_PROXY'] = '*'
+            os.environ['HTTP_PROXY'] = ''
+            os.environ['HTTPS_PROXY'] = ''
+
+            from data.loader import AKShareLoader, CachedDataLoader
+            loader = AKShareLoader()
+
+            # 测试是否能正常获取数据
+            test_df = loader.get_etf_price('510300', '2024-01-01', '2024-01-10')
+
+            if test_df.empty:
+                logger.warning("akshare数据获取失败，自动切换到mock数据源")
+                from data.loader import MockDataLoader
+                loader = MockDataLoader()
+
+            data_loader = CachedDataLoader(loader)
+
+        except Exception as e:
+            logger.warning(f"akshare初始化失败: {e}，自动切换到mock数据源")
+            from data.loader import MockDataLoader, CachedDataLoader
+            data_loader = CachedDataLoader(MockDataLoader())
+    elif data_source == 'mock':
+        # 直接使用mock数据源
+        from data.loader import MockDataLoader, CachedDataLoader
+        logger.info("使用mock数据源")
+        data_loader = CachedDataLoader(MockDataLoader())
+    elif data_source == 'xtquant':
+        # 使用xtquant数据源（需要迅投平台）
+        try:
+            from data.loader import XTQuantLoader, CachedDataLoader
+            logger.info("使用xtquant数据源")
+            data_loader = CachedDataLoader(XTQuantLoader())
+        except NameError:
+            logger.error("XTQuantLoader未实现，请安装迅投量化平台或切换到mock数据源")
+            raise
+        except Exception as e:
+            logger.warning(f"xtquant初始化失败: {e}，切换到mock数据源")
+            from data.loader import MockDataLoader, CachedDataLoader
+            data_loader = CachedDataLoader(MockDataLoader())
+    else:
+        # 未知数据源，回退到mock
+        logger.warning(f"未知数据源: {data_source}，切换到mock数据源")
+        from data.loader import MockDataLoader, CachedDataLoader
+        data_loader = CachedDataLoader(MockDataLoader())
 
     etf_pool = config['etf_pool']
     start_date = config['backtest']['start_date']
@@ -136,7 +187,7 @@ def run_backtest():
     # 运行回测
     start_date = config['backtest']['start_date']
     end_date = config['backtest']['end_date']
-    initial_cash = 1000000.0
+    initial_cash = config['backtest'].get('initial_cash', 1000000.0)  # 从配置读取初始资金
 
     logger.info(f"开始执行回测: {start_date} 到 {end_date}, 初始资金: {initial_cash:,.0f}")
     start_time = datetime.now()
@@ -166,6 +217,18 @@ def run_backtest():
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     logger.info("回测完成，结果已保存到 backtest_results.json 和 backtest_report.json")
+
+    # 生成交易报告
+    logger.info("生成交易报告")
+    try:
+        start_date = config['backtest']['start_date']
+        end_date = config['backtest']['end_date']
+        report_path = engine.save_trade_report(start_date, end_date)
+        logger.info(f"交易报告已保存到: {report_path}")
+    except Exception as e:
+        logger.warning(f"交易报告生成失败: {e}")
+        import traceback
+        traceback.print_exc()
 
     # 生成图表
     try:

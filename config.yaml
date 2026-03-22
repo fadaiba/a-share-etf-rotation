@@ -50,20 +50,32 @@ risk:
 # 交易参数
 trading:
   rebalance_freq: 1  # 每周调仓次数
-  min_shares: 100  # 最小交易单位
+  min_shares: 1  # 最小交易单位（回测阶段设为1，实盘改为100）
   twap_splits: 5  # TWAP拆单次数
   twap_interval: 3  # 间隔秒数
 
 # 回测参数
 backtest:
   start_date: "2020-01-01"
-  end_date: "2023-12-31"
-  fee_rate: 0.0002  # 手续费万2
+  end_date: "2021-12-31"
+  initial_cash: 1000000.0  # 初始资金100万元
+  fee_rate: 0.0001  # 手续费万2
   slippage: 0.001  # 滑点0.1%
 
 # 数据源
 data:
-  source: "mock"  # akshare, xtquant, mock
+  source: "xtquant"  # akshare, xtquant, mock
+  # Mock数据生成参数
+  mock:
+    base_price_min: 1.0      # 基础价格最小值
+    base_price_max: 5.0      # 基础价格最大值
+    daily_return_mean: 0.0005  # 日收益率均值（0.05%）
+    daily_return_std: 0.02     # 日收益率标准差（2%）
+    high_low_range: 0.01       # 最高最低价波动范围（1%）
+    open_close_range: 0.005    # 开盘价波动范围（0.5%）
+    volume_min: 100000         # 最小成交量
+    volume_max: 10000000       # 最大成交量
+    random_seed: 42            # 随机种子（保证可重复性）
 
 # 实盘参数
 live:

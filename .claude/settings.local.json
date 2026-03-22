@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import akshare as ak; print\\(''akshare版本:'', ak.__version__\\); print\\(''测试获取ETF数据...''\\); df = ak.fund_etf_hist_em\\(symbol=''510300'', period=''daily'', start_date=''20240101'', end_date=''20240110''\\); print\\(''数据行数:'', len\\(df\\)\\); print\\(df.head\\(\\)\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(dir \"c:\\\\work_tools\\\\A股ETF量化交易系统\\\\data\" /b)"
+    ]
+  }
+}

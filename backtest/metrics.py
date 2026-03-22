@@ -165,15 +165,21 @@ class PerformanceMetrics:
         """绘制绩效图表"""
         try:
             import matplotlib.pyplot as plt
+            from matplotlib.dates import DateFormatter
             plt.rcParams['font.sans-serif'] = ['SimHei']
             plt.rcParams['axes.unicode_minus'] = False
 
             fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
+            # 获取日期范围
+            date_min = self.portfolio_values.index.min()
+            date_max = self.portfolio_values.index.max()
+
             # 净值曲线
             axes[0, 0].plot(self.portfolio_values.index, self.portfolio_values.values)
             axes[0, 0].set_title('净值曲线')
             axes[0, 0].set_ylabel('净值')
+            axes[0, 0].set_xlim(date_min, date_max)  # 强制显示完整日期范围
             axes[0, 0].grid(True)
 
             # 回撤曲线
@@ -182,6 +188,7 @@ class PerformanceMetrics:
             axes[0, 1].fill_between(drawdown.index, drawdown.values, 0, color='red', alpha=0.3)
             axes[0, 1].set_title('回撤曲线')
             axes[0, 1].set_ylabel('回撤')
+            axes[0, 1].set_xlim(date_min, date_max)  # 强制显示完整日期范围
             axes[0, 1].grid(True)
 
             # 月度收益
@@ -199,6 +206,7 @@ class PerformanceMetrics:
             axes[1, 1].plot(rolling_sharpe.index, rolling_sharpe.values)
             axes[1, 1].set_title('滚动夏普比率')
             axes[1, 1].set_ylabel('夏普比率')
+            axes[1, 1].set_xlim(date_min, date_max)  # 强制显示完整日期范围
             axes[1, 1].grid(True)
 
             plt.tight_layout()

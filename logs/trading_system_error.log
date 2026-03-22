@@ -207,3 +207,13 @@
 2026-03-22 16:48:05.820 | ERROR    | __main__:strategy_function:115 | 策略执行错误: No module named 'scipy'
 2026-03-22 16:48:05.848 | ERROR    | __main__:strategy_function:115 | 策略执行错误: No module named 'scipy'
 2026-03-22 16:48:05.867 | ERROR    | __main__:strategy_function:115 | 策略执行错误: No module named 'scipy'
+2026-03-22 19:50:05.584 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:06.294 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:07.009 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:07.691 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:08.403 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:09.072 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:09.803 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:10.514 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 19:50:11.223 | ERROR    | __main__:strategy_function:115 | 策略执行错误: unsupported format string passed to Series.__format__
+2026-03-22 20:00:29.105 | ERROR    | data.loader:get_etf_price:78 | 获取ETF 510300 数据失败: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))

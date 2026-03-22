@@ -59,11 +59,13 @@ class PortfolioManager:
 
         risk_manager = RiskManager()
 
-        # 1. 市场过滤
+        # 1. 市场过滤（降低仓位而非完全空仓）
         market_ok = risk_manager.market_filter(index_df)
+        position_scale = 1.0  # 默认满仓
+
         if not market_ok:
-            logger.bind(context="strategy").warning("市场过滤触发，执行空仓策略")
-            return {}  # 空仓
+            logger.bind(context="strategy").warning("市场过滤触发，降低仓位至50%而非空仓")
+            position_scale = 0.5  # 保留50%仓位
 
         # 2. 风险预算权重
         etf_scores = {etf: 1.0 for etf in selected_etfs}  # 简化为相等评分
@@ -74,11 +76,22 @@ class PortfolioManager:
         current_vol = risk_manager.get_portfolio_volatility(weights, price_data)
         weights = risk_manager.volatility_target_scaling(weights, current_vol)
 
-        # 过滤掉权重过小的ETF
-        weights = {etf: w for etf, w in weights.items() if w > 0.001}
-        logger.bind(context="strategy").info(f"权重计算完成: {len(weights)} 个有效权重，总权重: {sum(weights.values()):.4f}")
+        # 应用市场过滤的仓位缩放
+        weights = {etf: w * position_scale for etf, w in weights.items()}
 
-        return weights
+        # 过滤掉权重过小的ETF（但保留至少1个）
+        min_weight_threshold = 0.001
+        filtered_weights = {etf: w for etf, w in weights.items() if w > min_weight_threshold}
+
+        # 如果过滤后为空，保留权重最大的ETF
+        if not filtered_weights and weights:
+            max_etf = max(weights.items(), key=lambda x: x[1])[0]
+            filtered_weights[max_etf] = weights[max_etf]
+            logger.bind(context="strategy").warning(f"所有ETF权重过小，保留最大权重ETF: {max_etf}")
+
+        logger.bind(context="strategy").info(f"权重计算完成: {len(filtered_weights)} 个有效权重，总权重: {sum(filtered_weights.values()):.4f}，仓位比例: {position_scale*100:.0f}%")
+
+        return filtered_weights
 
     def rebalance_portfolio(self, current_positions: Dict[str, Dict],
                            target_weights: Dict[str, float],
@@ -98,18 +111,38 @@ class PortfolioManager:
             # 获取当前持仓数量（从positions字典中提取shares）
             position_info = current_positions.get(etf, {'shares': 0, 'avg_price': 0})
             current_shares = position_info.get('shares', 0)
-            current_value = current_shares * current_prices.get(etf, 0)
+
+            # 确保current_price是标量值
+            current_price = current_prices.get(etf, 0)
+            if hasattr(current_price, 'item'):
+                current_price = current_price.item()
+            elif isinstance(current_price, (pd.Series, np.ndarray)):
+                current_price = float(current_price.iloc[-1] if hasattr(current_price, 'iloc') else current_price[-1])
+            current_price = float(current_price)  # 确保是float类型
+
+            current_value = current_shares * current_price
             target_value = target_values[etf]
 
             value_diff = target_value - current_value
 
-            if abs(value_diff) > 1e-6:  # 避免微小交易
+            logger.bind(context="strategy").debug(
+                f"  {etf}: 持仓 {current_shares:.0f}股 × {current_price:.2f} = {current_value:,.2f}，"
+                f"目标 {target_weights.get(etf, 0):.2%} × {total_value:,.2f} = {target_value:,.2f}，"
+                f"差异 {value_diff:+,.2f}"
+            )
+
+            # 降低阈值，避免微小差异被忽略（从1e-6改为1e-4，即0.0001元）
+            if abs(value_diff) > 1e-4:  # 避免微小交易
+                shares_diff = abs(value_diff) / current_price if current_price > 0 else 0
                 trades[etf] = {
                     'action': 'buy' if value_diff > 0 else 'sell',
                     'value': abs(value_diff),
-                    'shares': abs(value_diff) / current_prices.get(etf, 1)
+                    'shares': shares_diff
                 }
                 trade_count += 1
+                logger.bind(context="strategy").debug(f"  {etf}: 生成交易，{shares_diff:.2f}股，价值{abs(value_diff):.2f}")
+            else:
+                logger.bind(context="strategy").debug(f"  {etf}: 差异太小({value_diff:.6f})，跳过")
 
         logger.bind(context="strategy").info(f"调仓交易计算完成: 生成 {trade_count} 个交易")
         return trades
@@ -125,10 +158,13 @@ class PortfolioManager:
 
         for etf, trade in trades.items():
             shares = trade['shares']
+            original_value = trade['value']
+
+            logger.bind(context="strategy").debug(f"  {etf}: {trade['action']} - 原始份额 {shares:.2f}，原始价值 {original_value:.2f}")
 
             # 最小交易单位
             if shares < min_shares:
-                logger.bind(context="strategy").debug(f"  {etf}: 交易份额 {shares:.0f} 小于最小交易单位 {min_shares}，跳过")
+                logger.bind(context="strategy").debug(f"  {etf}: 交易份额 {shares:.2f} 小于最小交易单位 {min_shares}，跳过")
                 continue
 
             # 取整到最小交易单位
@@ -138,18 +174,36 @@ class PortfolioManager:
                 logger.bind(context="strategy").debug(f"  {etf}: 取整后份额为0，跳过")
                 continue
 
-            # 检查涨跌停（简化版）
+            # 获取当前价格（需要在外面定义，避免作用域问题）
             df = price_data.get(etf, pd.DataFrame())
-            if not df.empty:
-                current_price = df['close'].iloc[-1]
-                high_limit = df['high'].iloc[-1]  # 简化为前日最高
-                low_limit = df['low'].iloc[-1]   # 简化为前日最低
+            if df.empty:
+                logger.bind(context="strategy").warning(f"  {etf}: 价格数据为空，跳过")
+                continue
 
-                if trade['action'] == 'buy' and current_price >= high_limit * 0.99:  # 接近涨停
-                    logger.bind(context="strategy").debug(f"  {etf}: 买入时价格接近涨停，跳过")
+            current_price = df['close'].iloc[-1]
+            # 确保是标量值
+            if hasattr(current_price, 'item'):
+                current_price = current_price.item()
+            current_price = float(current_price)
+
+            logger.bind(context="strategy").debug(f"  {etf}: 当前价格 {current_price:.2f}")
+
+            # 检查涨跌停（使用昨日收盘价正确计算）
+            if len(df) >= 2:
+                prev_close = df['close'].iloc[-2]  # 昨日收盘价
+
+                # 正确计算涨跌停价（A股涨跌停板为10%）
+                up_limit = prev_close * 1.10  # 涨停价
+                down_limit = prev_close * 0.90  # 跌停价
+
+                logger.bind(context="strategy").debug(f"  {etf}: 昨收 {prev_close:.2f}，涨停 {up_limit:.2f}，跌停 {down_limit:.2f}")
+
+                # 回测阶段简化判断：只在极端情况下跳过
+                if trade['action'] == 'buy' and current_price >= up_limit * 0.995:  # 接近涨停
+                    logger.bind(context="strategy").debug(f"  {etf}: 买入时价格接近涨停 {current_price:.2f} >= {up_limit * 0.995:.2f}，跳过")
                     continue
-                elif trade['action'] == 'sell' and current_price <= low_limit * 1.01:  # 接近跌停
-                    logger.bind(context="strategy").debug(f"  {etf}: 卖出时价格接近跌停，跳过")
+                elif trade['action'] == 'sell' and current_price <= down_limit * 1.005:  # 接近跌停
+                    logger.bind(context="strategy").debug(f"  {etf}: 卖出时价格接近跌停 {current_price:.2f} <= {down_limit * 1.005:.2f}，跳过")
                     continue
 
             filtered_trades[etf] = {
@@ -158,6 +212,7 @@ class PortfolioManager:
                 'value': shares * current_price
             }
             filtered_count += 1
+            logger.bind(context="strategy").debug(f"  {etf}: ✓ 通过限制，最终份额 {shares}，价值 {shares * current_price:.2f}")
 
         logger.bind(context="strategy").info(f"交易限制应用完成: 剩余 {filtered_count} 个有效交易")
         return filtered_trades
