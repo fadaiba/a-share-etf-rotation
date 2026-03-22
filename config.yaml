@@ -1,0 +1,71 @@
+# 配置文件：所有参数配置化
+
+# ETF标的池
+etf_pool:
+  - "510300"  # 沪深300ETF
+  - "510500"  # 中证500ETF
+  - "159915"  # 创业板ETF
+  - "159919"  # 沪深300ETF
+  - "512100"  # 医药ETF
+  - "512880"  # 证券ETF
+  - "515050"  # 5GETF
+  - "516160"  # 新能源ETF
+  - "159949"  # 恒生ETF
+  - "518880"  # 黄金ETF
+  - "159952"  # 创业板ETF
+  - "159926"  # 国债ETF
+  - "159941"  # 纳斯达克ETF
+
+# 聚类参数
+clustering:
+  lookback_days: 120  # 历史收益率天数
+
+# 因子参数
+factors:
+  momentum:
+    ret20_weight: 0.6
+    ret60_weight: 0.4
+  trend:
+    ma20_period: 20
+    ma60_period: 60
+  final_score:
+    momentum_weight: 0.7
+    trend_weight: 0.3
+
+# ETF选择
+selection:
+  top_n: 3  # 选择前3个
+
+# 风险控制
+risk:
+  market_filter:
+    index: "000300"  # 沪深300指数
+    ma_period: 60
+  downside_vol: true  # 使用下行波动
+  risk_budget: true
+  vol_target: 0.10  # 年化波动率目标10%
+  drawdown_limit: -0.05  # 回撤控制-5%
+  stop_loss: -0.08  # 单标止损-8%
+
+# 交易参数
+trading:
+  rebalance_freq: 1  # 每周调仓次数
+  min_shares: 100  # 最小交易单位
+  twap_splits: 5  # TWAP拆单次数
+  twap_interval: 3  # 间隔秒数
+
+# 回测参数
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2023-12-31"
+  fee_rate: 0.0002  # 手续费万2
+  slippage: 0.001  # 滑点0.1%
+
+# 数据源
+data:
+  source: "mock"  # akshare, xtquant, mock
+
+# 实盘参数
+live:
+  rebalance_time: "14:55"
+  check_interval: 300  # 风控检查间隔秒数

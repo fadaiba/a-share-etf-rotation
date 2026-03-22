@@ -1,0 +1,8 @@
+numpy>=1.21.0
+pandas>=1.3.0
+scipy>=1.7.0
+PyYAML>=6.0
+matplotlib>=3.4.0
+akshare>=1.8.0
+loguru>=0.6.0
+# xtquant  # 需要根据xtquant官方安装方式添加
